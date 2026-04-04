@@ -58,6 +58,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { return }
 
+        // Window control commands
+        if trimmed == "expand" || trimmed == "open" || trimmed == "open up" || trimmed == "bigger" || trimmed == "make it bigger" || trimmed.contains("expand") {
+            floatingPanel?.toggleMini()
+            return
+        }
+        if trimmed == "minimize" || trimmed == "collapse" || trimmed == "shrink" {
+            if floatingPanel?.isMini == false {
+                floatingPanel?.toggleMini()
+            }
+            return
+        }
+
         // --- Prompt Builder mode ---
         if promptBuilder?.isActive == true {
             // "send" / "done" / "ship it" — send the draft to terminal
@@ -92,7 +104,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // --- Normal mode ---
 
         // Voice command to activate prompt builder
-        if trimmed == "build prompt" || trimmed == "prompt builder" || trimmed == "draft mode" || trimmed == "builder" || trimmed == "go for it" {
+        if trimmed == "build prompt" || trimmed == "prompt builder" || trimmed == "draft mode" || trimmed == "builder" || trimmed == "go for it" || trimmed == "switch to prompt" || trimmed == "switch to prompt builder" || trimmed == "prompt mode" || trimmed == "prompt" {
             promptBuilder?.start()
             return
         }
