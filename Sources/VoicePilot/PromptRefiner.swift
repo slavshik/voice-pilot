@@ -2,7 +2,7 @@ import Foundation
 
 class PromptRefiner {
     private let apiKey: String
-    private let model = "claude-sonnet-4-5-20250514"
+    private let model = "claude-sonnet-4-6"
 
     init() {
         if let key = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"], !key.isEmpty {

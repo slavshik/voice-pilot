@@ -2,8 +2,8 @@ import Foundation
 
 enum BuilderModel: String, CaseIterable {
     case haiku = "claude-haiku-4-5-20251001"
-    case sonnet = "claude-sonnet-4-5-20250514"
-    case opus = "claude-opus-4-5-20250514"
+    case sonnet = "claude-sonnet-4-6"
+    case opus = "claude-opus-4-6"
 
     var displayName: String {
         switch self {
@@ -64,7 +64,7 @@ class PromptBuilder: ObservableObject {
 
     private func buildPrompt(completion: @escaping (String) -> Void) {
         guard !apiKey.isEmpty else {
-            // Fallback: just concatenate
+            print("[PromptBuilder] No API key — using concatenation fallback")
             let combined = conversationHistory
                 .filter { $0.role == "user" }
                 .map { $0.text }
@@ -72,6 +72,7 @@ class PromptBuilder: ObservableObject {
             completion(combined)
             return
         }
+        print("[PromptBuilder] Using API with model: \(selectedModel.rawValue)")
 
         let systemPrompt = """
         You are a prompt builder. The user is dictating a prompt for Claude Code CLI via voice.
@@ -112,15 +113,33 @@ class PromptBuilder: ObservableObject {
         request.httpBody = jsonData
         request.timeoutInterval = 15
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let content = json["content"] as? [[String: Any]],
-                  let text = content.first?["text"] as? String else {
-                completion(self.currentDraft)
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            if let error = error {
+                print("[PromptBuilder] Network error: \(error)")
+                let fallback = self?.conversationHistory.filter { $0.role == "user" }.map { $0.text }.joined(separator: " ") ?? ""
+                completion(fallback)
                 return
             }
-            completion(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            guard let data = data else {
+                print("[PromptBuilder] No data received")
+                let fallback = self?.conversationHistory.filter { $0.role == "user" }.map { $0.text }.joined(separator: " ") ?? ""
+                completion(fallback)
+                return
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let content = json["content"] as? [[String: Any]],
+                   let text = content.first?["text"] as? String {
+                    completion(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    return
+                }
+                // API error response
+                if let errorInfo = json["error"] as? [String: Any] {
+                    print("[PromptBuilder] API error: \(errorInfo)")
+                }
+            }
+            // Fallback: concatenate user inputs
+            let fallback = self?.conversationHistory.filter { $0.role == "user" }.map { $0.text }.joined(separator: " ") ?? ""
+            completion(fallback)
         }.resume()
     }
 

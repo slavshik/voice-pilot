@@ -82,7 +82,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             // Otherwise — feed input to builder
-            promptBuilder?.addInput(text) {}
+            print("[App] Builder input: \(text)")
+            promptBuilder?.addInput(text) {
+                print("[App] Builder refinement complete")
+            }
             return
         }
 
