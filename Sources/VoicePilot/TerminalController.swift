@@ -136,7 +136,7 @@ class TerminalController: ObservableObject {
             var error: NSDictionary?
             script.executeAndReturnError(&error)
             if let error = error {
-                print("AppleScript error: \(error)")
+                print("[TerminalController] AppleScript error: \(error)")
             }
         }
     }
