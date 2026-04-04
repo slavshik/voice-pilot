@@ -5,3 +5,7 @@ xcuserdata/
 DerivedData/
 .DS_Store
 .env
+VoicePilot.app/
+Resources/icon_cropped.png
+Resources/icon.svg.png
+Resources/AppIcon.iconset/
