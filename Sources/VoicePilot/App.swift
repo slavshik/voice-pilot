@@ -58,6 +58,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { return }
 
+        // Mute/unmute commands
+        if trimmed == "mute" || trimmed == "shut up" || trimmed == "stop listening" || trimmed == "pause" {
+            speechEngine?.stopListening()
+            return
+        }
+
         // Window control commands
         if trimmed == "expand" || trimmed == "open" || trimmed == "open up" || trimmed == "bigger" || trimmed == "make it bigger" || trimmed.contains("expand") {
             floatingPanel?.toggleMini()

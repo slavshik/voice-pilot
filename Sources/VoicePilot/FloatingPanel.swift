@@ -233,11 +233,15 @@ struct FullContent: View {
                         Circle()
                             .fill(speechEngine.isListening ? Color.green : Color.red)
                             .frame(width: 6, height: 6)
-                        Text(speechEngine.isListening ? "Listening" : "Paused")
+                        Text(speechEngine.isListening ? "Listening" : "Muted")
                             .font(.system(size: 10))
                             .foregroundColor(Color.white.opacity(0.25))
                     }
                     Spacer()
+                    NativeButton(title: speechEngine.isListening ? "Mute" : "Unmute") {
+                        speechEngine.toggleListening()
+                    }
+                    .frame(width: 65, height: 20)
                     NativeButton(title: terminalController.terminalOnly ? "Terminal" : "Any App") {
                         terminalController.terminalOnly.toggle()
                     }
