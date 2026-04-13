@@ -29,6 +29,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         terminalController = TerminalController()
+        terminalController?.onError = { [weak self] msg in
+            self?.statusBar?.flash(msg)
+        }
         commandDetector = CommandDetector()
         promptRefiner = PromptRefiner()
         confirmationManager = ConfirmationManager(terminalController: terminalController!)

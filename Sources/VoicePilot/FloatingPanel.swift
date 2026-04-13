@@ -242,15 +242,74 @@ struct FullContent: View {
                         speechEngine.toggleListening()
                     }
                     .frame(width: 65, height: 20)
-                    NativeButton(title: terminalController.terminalOnly ? "Terminal" : "Any App") {
-                        terminalController.terminalOnly.toggle()
-                    }
-                    .frame(width: 70, height: 20)
+                    BackendMenu(terminalController: terminalController)
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(Color.white.opacity(0.02))
+        }
+    }
+}
+
+// MARK: - Backend Menu
+
+struct BackendMenu: View {
+    @ObservedObject var terminalController: TerminalController
+
+    var body: some View {
+        Menu {
+            Button("Auto-detect tmux pane") {
+                terminalController.clearTmuxPin()
+                terminalController.setBackend(.tmux)
+            }
+            Button("Pin current active tmux pane") {
+                terminalController.setBackend(.tmux)
+                terminalController.pinCurrentTmuxPane()
+            }
+            Button("Use AppleScript") {
+                terminalController.setBackend(.appleScript)
+            }
+            Divider()
+            Button("Set tmux path…") {
+                promptForTmuxPath()
+            }
+            Button("Refresh target") {
+                terminalController.refreshTargetDescription()
+            }
+        } label: {
+            Text(labelText)
+                .font(.system(size: 10))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundColor(.white.opacity(0.7))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .frame(maxWidth: 160, alignment: .trailing)
+        .onAppear { terminalController.refreshTargetDescription() }
+    }
+
+    private var labelText: String {
+        let prefix = terminalController.backendKind.displayName
+        if let target = terminalController.targetDescription, !target.isEmpty {
+            return "\(prefix): \(target)"
+        }
+        return prefix
+    }
+
+    private func promptForTmuxPath() {
+        let alert = NSAlert()
+        alert.messageText = "tmux binary path"
+        alert.informativeText = "Leave empty to auto-detect from Homebrew / /usr/bin."
+        alert.alertStyle = .informational
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = terminalController.tmuxBackend.configuredTmuxPath ?? ""
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            terminalController.setTmuxPath(field.stringValue)
         }
     }
 }
