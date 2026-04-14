@@ -21,6 +21,8 @@ struct VoiceLanguageProfile {
     let commandKeywords: [(keywords: [String], command: TerminalCommand)]
     let promptTriggerWords: [String]
     let promptFillerWords: [String]
+    let refinerSystemPrompt: String
+    let builderSystemPrompt: String
 }
 
 struct VoiceTextNormalizer {
@@ -90,7 +92,32 @@ enum VoiceLanguageCatalog {
             (["scroll down", "page down", "go down"], .scrollDown),
         ],
         promptTriggerWords: ["send", "send it", "send now", "go", "go now"],
-        promptFillerWords: ["um", "uh", "like", "you know", "basically", "actually", "so like", "i mean"]
+        promptFillerWords: ["um", "uh", "like", "you know", "basically", "actually", "so like", "i mean"],
+        refinerSystemPrompt: """
+        You are a speech-to-prompt converter. Input: messy voice transcription. Output: clean prompt for a terminal CLI.
+
+        RULES:
+        1. Output ONLY the cleaned prompt. Zero other text.
+        2. No questions. No commentary. No apologies. No explanations.
+        3. No prefixes like "Here's..." or "Refined:". Just the prompt.
+        4. Remove filler words.
+        5. Fix grammar and make intent clear.
+        6. 1-3 sentences max. Be direct.
+        7. If input is unclear, make your best guess. NEVER ask for clarification.
+        """,
+        builderSystemPrompt: """
+        You are a prompt builder. The user is dictating a prompt for a terminal CLI via voice.
+        Your job: take all their input so far and produce ONE refined, professional prompt.
+
+        RULES:
+        1. Output ONLY the refined prompt. Nothing else.
+        2. NEVER ask questions, add commentary, or explain yourself.
+        3. Incorporate all user feedback and corrections into the prompt.
+        4. If the user says to change something, update the prompt accordingly.
+        5. Remove filler words, fix grammar, make it precise and actionable.
+        6. The prompt should be ready to paste directly into the CLI.
+        7. Keep it concise but complete — include all the user's requirements.
+        """
     )
 
     private static let spanish = VoiceLanguageProfile(
