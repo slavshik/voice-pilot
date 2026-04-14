@@ -1,79 +1,115 @@
 import Foundation
 
+enum RefinerModel: String, CaseIterable {
+    case free = "openrouter/auto"
+    case freeRouter = "openrouter/free"
+    case claudeHaiku = "anthropic/claude-haiku-4.5"
+    case claudeSonnet = "anthropic/claude-sonnet-4.5"
+    case gpt5Mini = "openai/gpt-5-mini"
+    case gemini25Flash = "google/gemini-2.5-flash"
+    case llama33 = "meta-llama/llama-3.3-70b-instruct"
+
+    var displayName: String {
+        switch self {
+        case .free: return "Auto (paid, cheapest)"
+        case .freeRouter: return "Free router"
+        case .claudeHaiku: return "Claude Haiku 4.5"
+        case .claudeSonnet: return "Claude Sonnet 4.5"
+        case .gpt5Mini: return "GPT-5 mini"
+        case .gemini25Flash: return "Gemini 2.5 Flash"
+        case .llama33: return "Llama 3.3 70B"
+        }
+    }
+}
+
 class PromptRefiner {
     private let apiKey: String
-    private let model = "claude-sonnet-4-6"
+    var model: RefinerModel = .freeRouter
     var activeLanguageCode = VoiceLanguageCatalog.fallbackLanguageCode
 
     init() {
-        if let key = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"], !key.isEmpty {
+        if let key = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"], !key.isEmpty {
             self.apiKey = key
         } else if let key = Self.loadKeyFromEnvFile() {
             self.apiKey = key
         } else {
             self.apiKey = ""
-            print("Warning: No ANTHROPIC_API_KEY found. Prompt refinement will pass through raw text.")
+            print("Warning: No OPENROUTER_API_KEY found. Prompt refinement will pass through raw text.")
         }
     }
 
-    func refine(_ rawSpeech: String, completion: @escaping (String) -> Void) {
+    func refine(_ rawSpeech: String, completion: @escaping (_ refined: String, _ source: String) -> Void) {
         let profile = VoiceLanguageCatalog.profile(for: activeLanguageCode)
-
-        // Use basic cleanup only — fast and reliable
         let cleaned = stripTriggerWords(rawSpeech, triggerWords: profile.promptTriggerWords)
-        completion(cleanBasic(cleaned, languageCode: activeLanguageCode))
-        return
 
         guard !apiKey.isEmpty else {
-            completion(cleanBasic(rawSpeech, languageCode: activeLanguageCode))
+            completion(cleanBasic(cleaned, languageCode: activeLanguageCode), "local")
             return
         }
 
-        _ = stripTriggerWords(rawSpeech, triggerWords: profile.promptTriggerWords)
-
-        let systemPrompt = systemPrompt(for: activeLanguageCode)
-
         let body: [String: Any] = [
-            "model": model,
-            "max_tokens": 150,
-            "system": systemPrompt,
+            "model": model.rawValue,
+            "max_tokens": 250,
             "messages": [
+                ["role": "system", "content": systemPrompt(for: activeLanguageCode)],
                 ["role": "user", "content": cleaned]
             ]
         ]
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
-            completion(cleanBasic(rawSpeech, languageCode: activeLanguageCode))
+            completion(cleanBasic(cleaned, languageCode: activeLanguageCode), "local")
             return
         }
 
-        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.httpBody = jsonData
-        request.timeoutInterval = 5
+        let modelTag = model.displayName
+        let source = "OpenRouter • \(modelTag)"
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let self = self,
-                  let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let content = json["content"] as? [[String: Any]],
-                  let rawText = content.first?["text"] as? String else {
-                completion(self?.cleanBasic(cleaned, languageCode: self?.activeLanguageCode ?? VoiceLanguageCatalog.fallbackLanguageCode) ?? cleaned)
+        var request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/chat/completions")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("https://github.com/voice-pilot", forHTTPHeaderField: "HTTP-Referer")
+        request.setValue("Voice Pilot", forHTTPHeaderField: "X-Title")
+        request.httpBody = jsonData
+        request.timeoutInterval = 8
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+            guard let self = self else { return }
+            let fallback = self.cleanBasic(cleaned, languageCode: self.activeLanguageCode)
+
+            if let error = error {
+                print("[PromptRefiner] Network error: \(error.localizedDescription)")
+                completion(fallback, "local (network error)")
+                return
+            }
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                completion(fallback, "local (bad response)")
+                return
+            }
+            if let errorInfo = json["error"] as? [String: Any] {
+                print("[PromptRefiner] API error: \(errorInfo)")
+                completion(fallback, "local (API error)")
+                return
+            }
+            guard let choices = json["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let content = message["content"] as? String else {
+                completion(fallback, "local (no content)")
                 return
             }
 
-            let result = self.extractPrompt(rawText)
-            completion(result.isEmpty ? self.cleanBasic(cleaned, languageCode: self.activeLanguageCode) : result)
+            let extracted = self.extractPrompt(content)
+            if extracted.isEmpty {
+                completion(fallback, "local (rejected)")
+            } else {
+                completion(extracted, source)
+            }
         }.resume()
     }
 
     private func extractPrompt(_ text: String) -> String {
         let result = text.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Validate — if it contains questions or commentary, reject
         let lower = result.lowercased()
         let badPatterns = [
             "i need more", "could you provide", "please provide",
@@ -84,16 +120,9 @@ class PromptRefiner {
             "confidence", "status", "budget"
         ]
         for pattern in badPatterns {
-            if lower.contains(pattern) {
-                return ""
-            }
+            if lower.contains(pattern) { return "" }
         }
-
-        // If response is way longer than input, it's probably rambling
-        if result.count > text.count * 3 {
-            return ""
-        }
-
+        if result.count > text.count * 3 { return "" }
         return result
     }
 
@@ -138,6 +167,17 @@ class PromptRefiner {
             2. Bez pytań, komentarzy i wyjaśnień.
             3. Usuń wypełniacze i popraw gramatykę.
             4. 1-3 zdania maksymalnie, konkretnie i rzeczowo.
+            """
+        case "ru":
+            return """
+            Ты конвертер голоса в промт. Вход: грязная расшифровка речи. Выход: чистый промт для CLI.
+
+            ПРАВИЛА:
+            1. Верни ТОЛЬКО очищенный промт.
+            2. Без вопросов, комментариев и извинений.
+            3. Убирай слова-паразиты, исправляй грамматику.
+            4. 1-3 предложения максимум, прямо и по делу.
+            5. Если ввод неясен — делай лучшее предположение, НЕ проси уточнений.
             """
         default:
             return """
@@ -200,8 +240,8 @@ class PromptRefiner {
             if let contents = try? String(contentsOfFile: path, encoding: .utf8) {
                 for line in contents.components(separatedBy: .newlines) {
                     let trimmed = line.trimmingCharacters(in: .whitespaces)
-                    if trimmed.hasPrefix("ANTHROPIC_API_KEY=") {
-                        let value = String(trimmed.dropFirst("ANTHROPIC_API_KEY=".count))
+                    if trimmed.hasPrefix("OPENROUTER_API_KEY=") {
+                        let value = String(trimmed.dropFirst("OPENROUTER_API_KEY=".count))
                             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
                         if !value.isEmpty { return value }
                     }

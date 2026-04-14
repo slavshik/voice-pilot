@@ -10,6 +10,13 @@ class FloatingPanelController: NSObject, ObservableObject, NSWindowDelegate {
     private var terminalController: TerminalController
     @Published var isMini = true
 
+    private let miniWidth: CGFloat = 300
+    private let fullWidth: CGFloat = 320
+    private let miniMinHeight: CGFloat = 60
+    private let miniMaxHeight: CGFloat = 260
+    private let fullMinHeight: CGFloat = 220
+    private let fullMaxHeight: CGFloat = 560
+
     init(speechEngine: SpeechEngine, confirmationManager: ConfirmationManager, promptBuilder: PromptBuilder, terminalController: TerminalController) {
         self.speechEngine = speechEngine
         self.confirmationManager = confirmationManager
@@ -71,13 +78,31 @@ class FloatingPanelController: NSObject, ObservableObject, NSWindowDelegate {
     func toggleMini() {
         guard let window = window else { return }
         isMini.toggle()
-        let origin = window.frame.origin
+        let frame = window.frame
+        let targetWidth = isMini ? miniWidth : fullWidth
+        let targetHeight: CGFloat = isMini ? 90 : 300
+        let topY = frame.maxY
+        let newFrame = NSRect(x: frame.minX, y: topY - targetHeight, width: targetWidth, height: targetHeight)
+        window.setFrame(newFrame, display: true, animate: true)
+    }
 
-        if isMini {
-            window.setFrame(NSRect(x: origin.x, y: origin.y, width: 300, height: 90), display: true, animate: true)
-        } else {
-            window.setFrame(NSRect(x: origin.x, y: origin.y, width: 320, height: 300), display: true, animate: true)
-        }
+    func adjustContentHeight(_ measured: CGFloat) {
+        guard let window = window, measured > 0 else { return }
+        let minH = isMini ? miniMinHeight : fullMinHeight
+        let maxH = isMini ? miniMaxHeight : fullMaxHeight
+        let target = max(minH, min(measured, maxH))
+        let frame = window.frame
+        if abs(frame.height - target) < 0.5 { return }
+        let topY = frame.maxY
+        let newFrame = NSRect(x: frame.minX, y: topY - target, width: frame.width, height: target)
+        window.setFrame(newFrame, display: true, animate: false)
+    }
+}
+
+struct ContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
@@ -93,28 +118,39 @@ struct MainView: View {
     let bg = Color(nsColor: NSColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1.0))
 
     var body: some View {
-        Group {
-            if panelController.isMini {
-                MiniContent(
-                    speechEngine: speechEngine,
-                    confirmationManager: confirmationManager
-                )
-            } else if promptBuilder.isActive {
-                BuilderContent(
-                    speechEngine: speechEngine,
-                    promptBuilder: promptBuilder
-                )
-            } else {
-                FullContent(
-                    speechEngine: speechEngine,
-                    confirmationManager: confirmationManager,
-                    promptBuilder: promptBuilder,
-                    terminalController: terminalController
-                )
+        VStack(spacing: 0) {
+            Group {
+                if panelController.isMini {
+                    MiniContent(
+                        speechEngine: speechEngine,
+                        confirmationManager: confirmationManager
+                    )
+                } else if promptBuilder.isActive {
+                    BuilderContent(
+                        speechEngine: speechEngine,
+                        promptBuilder: promptBuilder
+                    )
+                } else {
+                    FullContent(
+                        speechEngine: speechEngine,
+                        confirmationManager: confirmationManager,
+                        promptBuilder: promptBuilder,
+                        terminalController: terminalController
+                    )
+                }
             }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: ContentHeightKey.self, value: proxy.size.height)
+                }
+            )
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(bg)
+        .onPreferenceChange(ContentHeightKey.self) { height in
+            panelController.adjustContentHeight(height)
+        }
     }
 }
 
@@ -128,36 +164,77 @@ struct MiniContent: View {
         VStack(alignment: .leading, spacing: 6) {
             Spacer().frame(height: 22)
 
-            HStack(spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 Circle()
                     .fill(speechEngine.isListening ? Color.green : Color.red)
                     .frame(width: 7, height: 7)
+                    .padding(.top, 4)
 
-                if !speechEngine.currentTranscript.isEmpty {
+                if confirmationManager.isRefining {
+                    HStack(alignment: .top, spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.6)
+                            .frame(width: 12, height: 12)
+                            .padding(.top, 1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(confirmationManager.originalText)
+                                .font(.system(size: 11))
+                                .foregroundColor(Color.white.opacity(0.5))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text("Refining via OpenRouter…")
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color.orange.opacity(0.8))
+                        }
+                    }
+                } else if confirmationManager.isShowingConfirmation {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .top, spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.green)
+                                .padding(.top, 2)
+                            Text(confirmationManager.refinedText)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundColor(Color.green.opacity(0.95))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if confirmationManager.countdown > 0 {
+                                Text("\(confirmationManager.countdown)")
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .foregroundColor(Color.orange.opacity(0.9))
+                                    .padding(.top, 2)
+                            }
+                        }
+                        if !confirmationManager.refinementSource.isEmpty {
+                            Text(confirmationManager.refinementSource)
+                                .font(.system(size: 8, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color.white.opacity(0.5))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(Color.white.opacity(0.08))
+                                )
+                                .padding(.leading, 14)
+                        }
+                    }
+                } else if !speechEngine.currentTranscript.isEmpty {
                     Text(speechEngine.currentTranscript)
                         .font(.system(size: 12))
                         .foregroundColor(.white)
-                        .lineLimit(2)
-                } else if confirmationManager.isShowingConfirmation {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.green)
-                        Text("Sent")
-                            .font(.system(size: 11))
-                            .foregroundColor(.green)
-                    }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Text(speechEngine.isListening ? "Listening..." : "Paused")
                         .font(.system(size: 12))
                         .foregroundColor(Color.white.opacity(0.3))
+                    Spacer()
                 }
-
-                Spacer()
             }
             .padding(.horizontal, 14)
-
-            Spacer()
+            .padding(.bottom, 12)
         }
     }
 }
@@ -181,10 +258,12 @@ struct FullContent: View {
                         Image(systemName: "waveform")
                             .font(.system(size: 12))
                             .foregroundColor(.blue)
+                            .padding(.top, 2)
                         Text(speechEngine.currentTranscript)
                             .font(.system(size: 13))
                             .foregroundColor(.white)
-                            .lineLimit(5)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 } else {
                     HStack(spacing: 8) {
@@ -197,20 +276,57 @@ struct FullContent: View {
                     }
                 }
 
+                if confirmationManager.isRefining {
+                    HStack(alignment: .top, spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                            .frame(width: 14, height: 14)
+                            .padding(.top, 1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(confirmationManager.originalText)
+                                .font(.system(size: 12))
+                                .foregroundColor(Color.white.opacity(0.5))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text("Refining via OpenRouter…")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color.orange.opacity(0.8))
+                        }
+                    }
+                }
+
                 if confirmationManager.isShowingConfirmation {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.green)
-                        Text(confirmationManager.refinedText)
-                            .font(.system(size: 12))
-                            .foregroundColor(Color.white.opacity(0.6))
-                            .lineLimit(3)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.green)
+                                .padding(.top, 2)
+                            Text(confirmationManager.refinedText)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundColor(Color.green.opacity(0.9))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if !confirmationManager.refinementSource.isEmpty {
+                            Text(confirmationManager.refinementSource)
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color.white.opacity(0.5))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.white.opacity(0.08))
+                                )
+                                .padding(.leading, 16)
+                        }
                     }
                 }
             }
             .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
 
             // Bottom bar
             VStack(spacing: 8) {
@@ -366,7 +482,8 @@ struct BuilderContent: View {
                 }
             }
             .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
 
             VStack(spacing: 8) {
                 // Native mode toggle

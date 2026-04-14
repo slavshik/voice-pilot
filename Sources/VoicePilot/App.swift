@@ -168,11 +168,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // It's a prompt — clean up and send directly to terminal
-        promptRefiner?.refine(text) { [weak self] refined in
+        // It's a prompt — show refining indicator, clean up, show preview with countdown, then send
+        confirmationManager?.startRefining(original: text)
+        promptRefiner?.refine(text) { [weak self] refined, source in
             DispatchQueue.main.async {
-                self?.confirmationManager?.showBriefly(refined)
-                self?.terminalController?.pasteAndEnter(refined)
+                self?.confirmationManager?.show(original: text, refined: refined, source: source)
             }
         }
     }

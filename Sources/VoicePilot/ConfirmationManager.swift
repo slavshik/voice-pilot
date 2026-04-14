@@ -4,8 +4,10 @@ import SwiftUI
 
 class ConfirmationManager: ObservableObject {
     @Published var isShowingConfirmation = false
+    @Published var isRefining = false
     @Published var originalText = ""
     @Published var refinedText = ""
+    @Published var refinementSource = ""
     @Published var countdown = 3
 
     private var countdownTimer: Timer?
@@ -15,9 +17,10 @@ class ConfirmationManager: ObservableObject {
         self.terminalController = terminalController
     }
 
-    func showBriefly(_ text: String) {
+    func showBriefly(_ text: String, source: String = "") {
         DispatchQueue.main.async { [weak self] in
             self?.refinedText = text
+            self?.refinementSource = source
             self?.isShowingConfirmation = true
             self?.countdown = 0
         }
@@ -27,12 +30,23 @@ class ConfirmationManager: ObservableObject {
         }
     }
 
-    func show(original: String, refined: String) {
+    func startRefining(original: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.originalText = original
+            self?.refinedText = ""
+            self?.refinementSource = ""
+            self?.isRefining = true
+        }
+    }
+
+    func show(original: String, refined: String, source: String = "") {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
+            self.isRefining = false
             self.originalText = original
             self.refinedText = refined
+            self.refinementSource = source
             self.countdown = 2
             self.isShowingConfirmation = true
 
