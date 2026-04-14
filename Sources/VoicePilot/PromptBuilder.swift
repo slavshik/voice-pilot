@@ -21,6 +21,7 @@ class PromptBuilder: ObservableObject {
     @Published var conversationHistory: [(role: String, text: String)] = []
 
     var selectedModel: BuilderModel = .sonnet
+    var activeLanguageCode = VoiceLanguageCatalog.fallbackLanguageCode
     private let apiKey: String
 
     init() {
@@ -74,19 +75,7 @@ class PromptBuilder: ObservableObject {
         }
         print("[PromptBuilder] Using API with model: \(selectedModel.rawValue)")
 
-        let systemPrompt = """
-        You are a prompt builder. The user is dictating a prompt for Claude Code CLI via voice.
-        Your job: take all their input so far and produce ONE refined, professional prompt.
-
-        RULES:
-        1. Output ONLY the refined prompt. Nothing else.
-        2. NEVER ask questions, add commentary, or explain yourself.
-        3. Incorporate all user feedback and corrections into the prompt.
-        4. If the user says to change something, update the prompt accordingly.
-        5. Remove filler words, fix grammar, make it precise and actionable.
-        6. The prompt should be ready to paste directly into Claude Code CLI.
-        7. Keep it concise but complete — include all the user's requirements.
-        """
+        let systemPrompt = systemPromptForCurrentLanguage()
 
         var messages: [[String: String]] = []
         for entry in conversationHistory {
@@ -163,5 +152,72 @@ class PromptBuilder: ObservableObject {
             }
         }
         return nil
+    }
+
+    private func systemPromptForCurrentLanguage() -> String {
+        switch VoiceLanguageCatalog.resolvedLanguageCode(for: activeLanguageCode) {
+        case "es":
+            return """
+            Eres un constructor de prompts. El usuario dicta un prompt para Claude Code CLI por voz.
+            Toma todas sus entradas y produce UN prompt refinado y profesional.
+
+            REGLAS:
+            1. Devuelve SOLO el prompt final.
+            2. No hagas preguntas ni agregues comentarios.
+            3. Incorpora correcciones y cambios del usuario.
+            4. Elimina muletillas y mejora gramática.
+            5. Debe quedar listo para pegar en Claude Code CLI.
+            """
+        case "de":
+            return """
+            Du bist ein Prompt-Builder. Der Nutzer diktiert einen Prompt für Claude Code CLI per Sprache.
+            Nutze alle bisherigen Eingaben und erzeuge EINEN verfeinerten Prompt.
+
+            REGELN:
+            1. Gib NUR den finalen Prompt aus.
+            2. Keine Fragen oder Kommentare.
+            3. Übernimm Korrekturen und Änderungen des Nutzers.
+            4. Entferne Füllwörter und verbessere die Grammatik.
+            5. Der Prompt muss direkt in Claude Code CLI einfügbar sein.
+            """
+        case "fr":
+            return """
+            Tu es un générateur de prompts. L'utilisateur dicte un prompt pour Claude Code CLI à la voix.
+            Utilise tout l'historique pour produire UN prompt final affiné.
+
+            RÈGLES:
+            1. Retourne UNIQUEMENT le prompt final.
+            2. Aucune question ni commentaire.
+            3. Intègre les corrections de l'utilisateur.
+            4. Supprime les mots parasites et améliore la grammaire.
+            5. Le prompt doit être prêt à coller dans Claude Code CLI.
+            """
+        case "pl":
+            return """
+            Jesteś kreatorem promptów. Użytkownik dyktuje prompt do Claude Code CLI.
+            Wykorzystaj całą dotychczasową treść i utwórz JEDEN dopracowany prompt.
+
+            ZASADY:
+            1. Zwróć WYŁĄCZNIE finalny prompt.
+            2. Bez pytań i komentarzy.
+            3. Uwzględnij poprawki i zmiany użytkownika.
+            4. Usuń wypełniacze i popraw gramatykę.
+            5. Prompt ma być gotowy do wklejenia do Claude Code CLI.
+            """
+        default:
+            return """
+            You are a prompt builder. The user is dictating a prompt for Claude Code CLI via voice.
+            Your job: take all their input so far and produce ONE refined, professional prompt.
+
+            RULES:
+            1. Output ONLY the refined prompt. Nothing else.
+            2. NEVER ask questions, add commentary, or explain yourself.
+            3. Incorporate all user feedback and corrections into the prompt.
+            4. If the user says to change something, update the prompt accordingly.
+            5. Remove filler words, fix grammar, make it precise and actionable.
+            6. The prompt should be ready to paste directly into Claude Code CLI.
+            7. Keep it concise but complete — include all the user's requirements.
+            """
+        }
     }
 }

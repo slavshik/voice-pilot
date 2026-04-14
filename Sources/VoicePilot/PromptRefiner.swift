@@ -3,6 +3,7 @@ import Foundation
 class PromptRefiner {
     private let apiKey: String
     private let model = "claude-sonnet-4-6"
+    var activeLanguageCode = VoiceLanguageCatalog.fallbackLanguageCode
 
     init() {
         if let key = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"], !key.isEmpty {
@@ -16,33 +17,21 @@ class PromptRefiner {
     }
 
     func refine(_ rawSpeech: String, completion: @escaping (String) -> Void) {
+        let profile = VoiceLanguageCatalog.profile(for: activeLanguageCode)
+
         // Use basic cleanup only — fast and reliable
-        let cleaned = stripTriggerWords(rawSpeech)
-        completion(cleanBasic(cleaned))
+        let cleaned = stripTriggerWords(rawSpeech, triggerWords: profile.promptTriggerWords)
+        completion(cleanBasic(cleaned, languageCode: activeLanguageCode))
         return
 
         guard !apiKey.isEmpty else {
-            completion(cleanBasic(rawSpeech))
+            completion(cleanBasic(rawSpeech, languageCode: activeLanguageCode))
             return
         }
 
-        let _unused = stripTriggerWords(rawSpeech)
+        _ = stripTriggerWords(rawSpeech, triggerWords: profile.promptTriggerWords)
 
-        let systemPrompt = """
-        You are a speech-to-prompt converter. Input: messy voice transcription. Output: clean CLI prompt.
-
-        RULES:
-        1. Output ONLY the cleaned prompt. Zero other text.
-        2. No questions. No commentary. No apologies. No explanations.
-        3. No prefixes like "Here's..." or "Refined:". Just the prompt.
-        4. Remove filler words (um, uh, like, you know).
-        5. Fix grammar and make intent clear.
-        6. 1-3 sentences max. Be direct.
-        7. If input is unclear, make your best guess. NEVER ask for clarification.
-
-        Example input: "uh can you like check the docker file and um make sure the ports are right send"
-        Example output: Check the Dockerfile and verify all port mappings are correct.
-        """
+        let systemPrompt = systemPrompt(for: activeLanguageCode)
 
         let body: [String: Any] = [
             "model": model,
@@ -54,7 +43,7 @@ class PromptRefiner {
         ]
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
-            completion(cleanBasic(rawSpeech))
+            completion(cleanBasic(rawSpeech, languageCode: activeLanguageCode))
             return
         }
 
@@ -72,12 +61,12 @@ class PromptRefiner {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let content = json["content"] as? [[String: Any]],
                   let rawText = content.first?["text"] as? String else {
-                completion(self?.cleanBasic(cleaned) ?? cleaned)
+                completion(self?.cleanBasic(cleaned, languageCode: self?.activeLanguageCode ?? VoiceLanguageCatalog.fallbackLanguageCode) ?? cleaned)
                 return
             }
 
             let result = self.extractPrompt(rawText)
-            completion(result.isEmpty ? self.cleanBasic(cleaned) : result)
+            completion(result.isEmpty ? self.cleanBasic(cleaned, languageCode: self.activeLanguageCode) : result)
         }.resume()
     }
 
@@ -108,13 +97,71 @@ class PromptRefiner {
         return result
     }
 
-    private func stripTriggerWords(_ text: String) -> String {
+    private func systemPrompt(for languageCode: String) -> String {
+        switch VoiceLanguageCatalog.resolvedLanguageCode(for: languageCode) {
+        case "es":
+            return """
+            Eres un convertidor de voz a prompt. Entrada: transcripción de voz desordenada. Salida: prompt limpio para CLI.
+
+            REGLAS:
+            1. Devuelve SOLO el prompt limpio.
+            2. Sin preguntas, comentarios ni explicaciones.
+            3. Quita muletillas y corrige gramática.
+            4. Máximo 1-3 frases, directo y accionable.
+            """
+        case "de":
+            return """
+            Du bist ein Sprach-zu-Prompt-Konverter. Eingabe: unordentliche Spracherkennung. Ausgabe: sauberer CLI-Prompt.
+
+            REGELN:
+            1. Gib NUR den bereinigten Prompt aus.
+            2. Keine Fragen, Kommentare oder Erklärungen.
+            3. Entferne Füllwörter und verbessere Grammatik.
+            4. Maximal 1-3 Sätze, direkt und umsetzbar.
+            """
+        case "fr":
+            return """
+            Tu es un convertisseur voix-vers-prompt. Entrée: transcription vocale brouillonne. Sortie: prompt CLI propre.
+
+            RÈGLES:
+            1. Retourne UNIQUEMENT le prompt nettoyé.
+            2. Aucune question, aucun commentaire, aucune explication.
+            3. Supprime les mots parasites et corrige la grammaire.
+            4. 1 à 3 phrases max, directes et actionnables.
+            """
+        case "pl":
+            return """
+            Jesteś konwerterem mowy na prompt. Wejście: chaotyczna transkrypcja mowy. Wyjście: czysty prompt CLI.
+
+            ZASADY:
+            1. Zwracaj WYŁĄCZNIE oczyszczony prompt.
+            2. Bez pytań, komentarzy i wyjaśnień.
+            3. Usuń wypełniacze i popraw gramatykę.
+            4. 1-3 zdania maksymalnie, konkretnie i rzeczowo.
+            """
+        default:
+            return """
+            You are a speech-to-prompt converter. Input: messy voice transcription. Output: clean CLI prompt.
+
+            RULES:
+            1. Output ONLY the cleaned prompt. Zero other text.
+            2. No questions. No commentary. No apologies. No explanations.
+            3. No prefixes like "Here's..." or "Refined:". Just the prompt.
+            4. Remove filler words.
+            5. Fix grammar and make intent clear.
+            6. 1-3 sentences max. Be direct.
+            7. If input is unclear, make your best guess. NEVER ask for clarification.
+            """
+        }
+    }
+
+    private func stripTriggerWords(_ text: String, triggerWords: [String]) -> String {
         var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let triggerWords = ["send", "send it", "send now", "go", "go now"]
-        let lower = cleaned.lowercased()
+        let lower = VoiceTextNormalizer.normalize(cleaned)
         for trigger in triggerWords {
-            if lower.hasSuffix(trigger) {
-                let endIndex = cleaned.index(cleaned.endIndex, offsetBy: -trigger.count)
+            let normalizedTrigger = VoiceTextNormalizer.normalize(trigger)
+            if lower.hasSuffix(normalizedTrigger) {
+                let endIndex = cleaned.index(cleaned.endIndex, offsetBy: -trigger.count, limitedBy: cleaned.startIndex) ?? cleaned.startIndex
                 cleaned = String(cleaned[cleaned.startIndex..<endIndex])
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 break
@@ -123,12 +170,15 @@ class PromptRefiner {
         return cleaned.isEmpty ? text : cleaned
     }
 
-    private func cleanBasic(_ text: String) -> String {
-        var cleaned = stripTriggerWords(text)
-        let fillers = ["um", "uh", "like", "you know", "basically", "actually", "so like", "I mean"]
+    private func cleanBasic(_ text: String, languageCode: String) -> String {
+        let profile = VoiceLanguageCatalog.profile(for: languageCode)
+        var cleaned = stripTriggerWords(text, triggerWords: profile.promptTriggerWords)
+
+        let fillers = profile.promptFillerWords
         for filler in fillers {
+            let escaped = NSRegularExpression.escapedPattern(for: filler)
             cleaned = cleaned.replacingOccurrences(
-                of: "\\b\(filler)\\b",
+                of: "\\b\(escaped)\\b",
                 with: "",
                 options: [.regularExpression, .caseInsensitive]
             )

@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var confirmationManager: ConfirmationManager?
     var floatingPanel: FloatingPanelController?
     var promptBuilder: PromptBuilder?
+    var inputLanguageManager: InputLanguageManager?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -28,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide dock icon — menu bar only
         NSApp.setActivationPolicy(.accessory)
 
+        inputLanguageManager = InputLanguageManager()
         terminalController = TerminalController()
         terminalController?.onError = { [weak self] msg in
             self?.statusBar?.flash(msg)
@@ -37,9 +39,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         confirmationManager = ConfirmationManager(terminalController: terminalController!)
         promptBuilder = PromptBuilder()
 
-        speechEngine = SpeechEngine { [weak self] utterance in
-            self?.handleUtterance(utterance)
-        }
+        let initialLocale = inputLanguageManager?.activeSpeechLocale ?? Locale(identifier: "en-US")
+        speechEngine = SpeechEngine(
+            onUtterance: { [weak self] utterance in
+                self?.handleUtterance(utterance)
+            },
+            initialLocale: initialLocale
+        )
 
         // Show persistent floating panel with all controls
         floatingPanel = FloatingPanelController(
@@ -57,25 +63,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
+        inputLanguageManager?.$activeSpeechLocale
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] locale in
+                self?.speechEngine?.setRecognizerLocale(locale)
+            }
+            .store(in: &cancellables)
+
+        inputLanguageManager?.$activeCommandLanguageCode
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] languageCode in
+                self?.promptRefiner?.activeLanguageCode = languageCode
+                self?.promptBuilder?.activeLanguageCode = languageCode
+                self?.statusBar?.flash("Lang: \(languageCode.uppercased())")
+            }
+            .store(in: &cancellables)
+
         speechEngine?.startListening()
     }
 
     private func handleUtterance(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else { return }
+        let normalizedText = VoiceTextNormalizer.normalize(text)
+        guard !normalizedText.isEmpty else { return }
+
+        let languageCode = inputLanguageManager?.activeCommandLanguageCode ?? VoiceLanguageCatalog.fallbackLanguageCode
+        let profile = VoiceLanguageCatalog.profile(for: languageCode)
 
         // Mute/unmute commands
-        if trimmed == "mute" || trimmed == "shut up" || trimmed == "stop listening" || trimmed == "pause" {
+        if isExactMatch(normalizedText, phrases: profile.app.mute) {
             speechEngine?.stopListening()
             return
         }
 
         // Window control commands
-        if trimmed == "expand" || trimmed == "open" || trimmed == "open up" || trimmed == "bigger" || trimmed == "make it bigger" || trimmed.contains("expand") {
+        if isExactMatch(normalizedText, phrases: profile.app.expandExact)
+            || containsMatch(normalizedText, phrases: profile.app.expandContains) {
             floatingPanel?.toggleMini()
             return
         }
-        if trimmed == "minimize" || trimmed == "collapse" || trimmed == "shrink" {
+        if isExactMatch(normalizedText, phrases: profile.app.minimize) {
             if floatingPanel?.isMini == false {
                 floatingPanel?.toggleMini()
             }
@@ -85,7 +111,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // --- Prompt Builder mode ---
         if promptBuilder?.isActive == true {
             // "send" / "done" / "ship it" — send the draft to terminal
-            if trimmed == "send" || trimmed == "done" || trimmed == "ship it" || trimmed == "send it" {
+            if isExactMatch(normalizedText, phrases: profile.app.builderSend) {
                 if let draft = promptBuilder?.currentDraft, !draft.isEmpty {
                     terminalController?.pasteAndEnter(draft)
                     confirmationManager?.showBriefly(draft)
@@ -94,14 +120,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             // "cancel" / "discard" / "voice control" — exit builder without sending
-            if trimmed == "cancel" || trimmed == "discard" || trimmed == "nevermind"
-                || trimmed.contains("voice control") || trimmed.contains("back to voice")
-                || trimmed.contains("switch to voice") {
+            if isExactMatch(normalizedText, phrases: profile.app.builderCancelExact)
+                || containsMatch(normalizedText, phrases: profile.app.builderCancelContains) {
                 promptBuilder?.stop()
                 return
             }
             // "start over" — reset but stay in builder
-            if trimmed == "start over" || trimmed == "reset" {
+            if isExactMatch(normalizedText, phrases: profile.app.builderReset) {
                 promptBuilder?.start()
                 return
             }
@@ -116,25 +141,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // --- Normal mode ---
 
         // Voice command to activate prompt builder
-        if trimmed.contains("build prompt") || trimmed.contains("prompt builder") || trimmed.contains("prompt mode") || trimmed.contains("switch to prompt") || trimmed == "draft mode" || trimmed == "builder" || trimmed == "go for it" || trimmed == "prompt" {
+        if containsMatch(normalizedText, phrases: profile.app.builderActivateContains)
+            || isExactMatch(normalizedText, phrases: profile.app.builderActivateExact) {
             promptBuilder?.start()
             return
         }
 
         // Check if it's a confirmation/cancel for pending prompt
         if confirmationManager?.isShowingConfirmation == true {
-            if trimmed == "send" || trimmed == "go" || trimmed == "yes" {
+            if isExactMatch(normalizedText, phrases: profile.app.confirmationYes) {
                 confirmationManager?.confirmNow()
                 return
             }
-            if trimmed == "cancel" || trimmed == "no" || trimmed == "abort" {
+            if isExactMatch(normalizedText, phrases: profile.app.confirmationNo) {
                 confirmationManager?.cancel()
                 return
             }
         }
 
         // Check if it's a terminal command
-        if let command = commandDetector?.detect(trimmed) {
+        if let command = commandDetector?.detect(text, languageCode: languageCode) {
             DispatchQueue.main.async { [weak self] in
                 self?.statusBar?.flash(command.description)
                 self?.terminalController?.execute(command)
@@ -149,5 +175,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.terminalController?.pasteAndEnter(refined)
             }
         }
+    }
+
+    private func isExactMatch(_ normalizedText: String, phrases: [String]) -> Bool {
+        for phrase in phrases where normalizedText == VoiceTextNormalizer.normalize(phrase) {
+            return true
+        }
+        return false
+    }
+
+    private func containsMatch(_ normalizedText: String, phrases: [String]) -> Bool {
+        for phrase in phrases where normalizedText.contains(VoiceTextNormalizer.normalize(phrase)) {
+            return true
+        }
+        return false
     }
 }

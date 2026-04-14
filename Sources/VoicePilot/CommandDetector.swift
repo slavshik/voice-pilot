@@ -21,28 +21,18 @@ enum TerminalCommand {
 }
 
 class CommandDetector {
-    private let commandMap: [(keywords: [String], command: TerminalCommand)] = [
-        (["enter", "submit", "return", "press enter"], .enter),
-        (["yes", "confirm", "one", "accept", "approve", "yeah"], .confirm),
-        (["no", "deny", "reject", "two", "decline", "nah"], .deny),
-        (["cancel", "stop", "abort", "kill", "quit", "escape"], .cancel),
-        (["scroll up", "page up", "go up"], .scrollUp),
-        (["scroll down", "page down", "go down"], .scrollDown),
-    ]
-
-    func detect(_ text: String) -> TerminalCommand? {
-        let normalized = text.lowercased()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: ".", with: "")
-            .replacingOccurrences(of: ",", with: "")
+    func detect(_ text: String, languageCode: String) -> TerminalCommand? {
+        let profile = VoiceLanguageCatalog.profile(for: languageCode)
+        let normalized = VoiceTextNormalizer.normalize(text)
 
         // Only match short utterances as commands (< 5 words)
         let wordCount = normalized.split(separator: " ").count
         guard wordCount <= 4 else { return nil }
 
-        for entry in commandMap {
+        for entry in profile.commandKeywords {
             for keyword in entry.keywords {
-                if normalized == keyword || normalized == "say \(keyword)" {
+                let normalizedKeyword = VoiceTextNormalizer.normalize(keyword)
+                if normalized == normalizedKeyword || normalized == "say \(normalizedKeyword)" {
                     return entry.command
                 }
             }
