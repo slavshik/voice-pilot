@@ -145,7 +145,27 @@ enum VoiceLanguageCatalog {
             (["desplazar abajo", "bajar pagina", "abajo"], .scrollDown),
         ],
         promptTriggerWords: ["enviar", "enviarlo", "mandalo", "enviar ahora"],
-        promptFillerWords: ["eh", "este", "pues", "o sea", "como que", "en plan"]
+        promptFillerWords: ["eh", "este", "pues", "o sea", "como que", "en plan"],
+        refinerSystemPrompt: """
+        Eres un convertidor de voz a prompt. Entrada: transcripcion de voz desordenada. Salida: prompt limpio para CLI.
+
+        REGLAS:
+        1. Devuelve SOLO el prompt limpio.
+        2. Sin preguntas, comentarios ni explicaciones.
+        3. Quita muletillas y corrige gramatica.
+        4. Maximo 1-3 frases, directo y accionable.
+        """,
+        builderSystemPrompt: """
+        Eres un constructor de prompts. El usuario dicta un prompt para Claude Code CLI por voz.
+        Toma todas sus entradas y produce UN prompt refinado y profesional.
+
+        REGLAS:
+        1. Devuelve SOLO el prompt final.
+        2. No hagas preguntas ni agregues comentarios.
+        3. Incorpora correcciones y cambios del usuario.
+        4. Elimina muletillas y mejora gramatica.
+        5. Debe quedar listo para pegar en Claude Code CLI.
+        """
     )
 
     private static let german = VoiceLanguageProfile(
@@ -173,7 +193,27 @@ enum VoiceLanguageCatalog {
             (["nach unten scrollen", "seite runter", "runter"], .scrollDown),
         ],
         promptTriggerWords: ["senden", "jetzt senden", "schick es", "abschicken"],
-        promptFillerWords: ["ah", "ahm", "ehm", "also", "halt", "sozusagen"]
+        promptFillerWords: ["ah", "ahm", "ehm", "also", "halt", "sozusagen"],
+        refinerSystemPrompt: """
+        Du bist ein Sprach-zu-Prompt-Konverter. Eingabe: unordentliche Spracherkennung. Ausgabe: sauberer CLI-Prompt.
+
+        REGELN:
+        1. Gib NUR den bereinigten Prompt aus.
+        2. Keine Fragen, Kommentare oder Erklarungen.
+        3. Entferne Fullworter und verbessere Grammatik.
+        4. Maximal 1-3 Satze, direkt und umsetzbar.
+        """,
+        builderSystemPrompt: """
+        Du bist ein Prompt-Builder. Der Nutzer diktiert einen Prompt fur Claude Code CLI per Sprache.
+        Nutze alle bisherigen Eingaben und erzeuge EINEN verfeinerten Prompt.
+
+        REGELN:
+        1. Gib NUR den finalen Prompt aus.
+        2. Keine Fragen oder Kommentare.
+        3. Ubernimm Korrekturen und Anderungen des Nutzers.
+        4. Entferne Fullworter und verbessere die Grammatik.
+        5. Der Prompt muss direkt in Claude Code CLI einfugbar sein.
+        """
     )
 
     private static let french = VoiceLanguageProfile(
@@ -201,7 +241,27 @@ enum VoiceLanguageCatalog {
             (["defiler vers le bas", "page suivante", "descendre"], .scrollDown),
         ],
         promptTriggerWords: ["envoyer", "envoie", "envoie le", "envoi maintenant"],
-        promptFillerWords: ["euh", "ben", "du coup", "genre", "en fait"]
+        promptFillerWords: ["euh", "ben", "du coup", "genre", "en fait"],
+        refinerSystemPrompt: """
+        Tu es un convertisseur voix-vers-prompt. Entree: transcription vocale brouillonne. Sortie: prompt CLI propre.
+
+        REGLES:
+        1. Retourne UNIQUEMENT le prompt nettoye.
+        2. Aucune question, aucun commentaire, aucune explication.
+        3. Supprime les mots parasites et corrige la grammaire.
+        4. 1 a 3 phrases max, directes et actionnables.
+        """,
+        builderSystemPrompt: """
+        Tu es un generateur de prompts. L'utilisateur dicte un prompt pour Claude Code CLI a la voix.
+        Utilise tout l'historique pour produire UN prompt final affine.
+
+        REGLES:
+        1. Retourne UNIQUEMENT le prompt final.
+        2. Aucune question ni commentaire.
+        3. Integre les corrections de l'utilisateur.
+        4. Supprime les mots parasites et ameliore la grammaire.
+        5. Le prompt doit etre pret a coller dans Claude Code CLI.
+        """
     )
 
     private static let polish = VoiceLanguageProfile(
@@ -229,7 +289,27 @@ enum VoiceLanguageCatalog {
             (["przewin w dol", "strona w dol", "w dol"], .scrollDown),
         ],
         promptTriggerWords: ["wyslij", "wyslij teraz", "wyslij to"],
-        promptFillerWords: ["yyy", "eee", "jakby", "no wiec", "w sensie"]
+        promptFillerWords: ["yyy", "eee", "jakby", "no wiec", "w sensie"],
+        refinerSystemPrompt: """
+        Jestes konwerterem mowy na prompt. Wejscie: chaotyczna transkrypcja mowy. Wyjscie: czysty prompt CLI.
+
+        ZASADY:
+        1. Zwracaj WYLACZNIE oczyszczony prompt.
+        2. Bez pytan, komentarzy i wyjasnien.
+        3. Usun wypelniacze i popraw gramatyke.
+        4. 1-3 zdania maksymalnie, konkretnie i rzeczowo.
+        """,
+        builderSystemPrompt: """
+        Jestes kreatorem promptow. Uzytkownik dyktuje prompt do Claude Code CLI.
+        Wykorzystaj cala dotychczasowa tresc i utworz JEDEN dopracowany prompt.
+
+        ZASADY:
+        1. Zwroc WYLACZNIE finalny prompt.
+        2. Bez pytan i komentarzy.
+        3. Uwzglednij poprawki i zmiany uzytkownika.
+        4. Usun wypelniacze i popraw gramatyke.
+        5. Prompt ma byc gotowy do wklejenia do Claude Code CLI.
+        """
     )
 
     private static let russian = VoiceLanguageProfile(
@@ -257,7 +337,28 @@ enum VoiceLanguageCatalog {
             (["прокрути вниз", "страница вниз", "вниз"], .scrollDown),
         ],
         promptTriggerWords: ["отправь", "отправить", "пошли", "выполни"],
-        promptFillerWords: ["ээ", "эм", "ну", "как бы", "типа", "в общем"]
+        promptFillerWords: ["ээ", "эм", "ну", "как бы", "типа", "в общем"],
+        refinerSystemPrompt: """
+        Ты конвертер голоса в промт. Вход: грязная расшифровка речи. Выход: чистый промт для CLI.
+
+        ПРАВИЛА:
+        1. Верни ТОЛЬКО очищенный промт.
+        2. Без вопросов, комментариев и извинений.
+        3. Убирай слова-паразиты, исправляй грамматику.
+        4. 1-3 предложения максимум, прямо и по делу.
+        5. Если ввод неясен — делай лучшее предположение, НЕ проси уточнений.
+        """,
+        builderSystemPrompt: """
+        Ты конструктор промтов. Пользователь диктует промт для Claude Code CLI голосом.
+        Используй все его вводы и создай ОДИН отполированный промт.
+
+        ПРАВИЛА:
+        1. Верни ТОЛЬКО финальный промт. Ничего больше.
+        2. НЕ задавай вопросы, не комментируй и не объясняй.
+        3. Учитывай все исправления и пожелания пользователя.
+        4. Убирай слова-паразиты, исправляй грамматику.
+        5. Промт должен быть готов к вставке в Claude Code CLI.
+        """
     )
 
     private static let profiles: [String: VoiceLanguageProfile] = [

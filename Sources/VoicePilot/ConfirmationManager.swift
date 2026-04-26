@@ -47,10 +47,9 @@ class ConfirmationManager: ObservableObject {
             self.originalText = original
             self.refinedText = refined
             self.refinementSource = source
-            self.countdown = 2
+            self.countdown = 0
             self.isShowingConfirmation = true
 
-            self.startCountdown()
             self.playSound()
         }
     }
